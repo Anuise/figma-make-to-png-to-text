@@ -10,21 +10,24 @@ const migrationsDirectory = join(
 );
 
 export async function migrate(pool: Pool): Promise<void> {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      name text PRIMARY KEY,
-      applied_at timestamptz NOT NULL DEFAULT now()
-    )
-  `);
-
   const migrations = (await readdir(migrationsDirectory))
     .filter((name) => name.endsWith(".sql"))
     .sort();
 
-  for (const name of migrations) {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext('analysis-tool-schema-migrations'))",
+    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        name text PRIMARY KEY,
+        applied_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+
+    for (const name of migrations) {
       const applied = await client.query(
         "SELECT 1 FROM schema_migrations WHERE name = $1",
         [name],
@@ -35,13 +38,14 @@ export async function migrate(pool: Pool): Promise<void> {
           name,
         ]);
       }
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
     }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 }
 

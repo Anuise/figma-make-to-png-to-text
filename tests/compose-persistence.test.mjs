@@ -122,13 +122,17 @@ async function waitForReadyRun(url, runId) {
 test("preserves analysis runs and source revisions across Compose restart", async () => {
   const project = `analysis-tool-acceptance-${process.pid}-${Date.now()}`;
   const webPort = await getUnusedPort();
-  const postgresPort = await getUnusedPort();
+  let postgresPort = await getUnusedPort();
+  while (postgresPort === webPort) {
+    postgresPort = await getUnusedPort();
+  }
   const url = `http://127.0.0.1:${webPort}`;
   const environment = {
     WEB_PORT: String(webPort),
     POSTGRES_PORT: String(postgresPort),
     SOURCE_PROJECTS_ROOT: resolve(repositoryRoot, "tests/fixtures/sources"),
   };
+  let testError;
 
   try {
     await runCompose(project, environment, ["up", "--build", "--detach"]);
@@ -167,12 +171,26 @@ test("preserves analysis runs and source revisions across Compose restart", asyn
       },
       persisted,
     );
-  } finally {
+  } catch (error) {
+    testError = error;
+  }
+
+  let cleanupError;
+  try {
     await runCompose(
       project,
       environment,
       ["down", "--volumes", "--remove-orphans"],
       60_000,
-    ).catch(() => undefined);
+    );
+  } catch (error) {
+    cleanupError = error;
+  }
+
+  if (testError) {
+    throw testError;
+  }
+  if (cleanupError) {
+    throw cleanupError;
   }
 });

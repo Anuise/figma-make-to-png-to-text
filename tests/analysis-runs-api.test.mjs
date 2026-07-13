@@ -40,8 +40,12 @@ test("persists a queued analysis run through the HTTP API", async (context) => {
   });
 
   pool = new pg.Pool({ connectionString: postgres.databaseUrl });
-  await migrate(pool);
-  await migrate(pool);
+  await Promise.all([
+    migrate(pool),
+    migrate(pool),
+    migrate(pool),
+    migrate(pool),
+  ]);
 
   await pool.query(
     "ALTER TABLE jobs ADD CONSTRAINT reject_test_jobs CHECK (false)",
