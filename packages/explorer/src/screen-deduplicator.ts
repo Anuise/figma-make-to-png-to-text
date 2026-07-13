@@ -9,7 +9,7 @@ export class ScreenDeduplicator {
   private seen = new Set<string>();
 
   private key(screen: ScreenFingerprint): string {
-    return `${screen.route}\0${screen.uiHash}\0${screen.visibleStateHash}`;
+    return `${screen.route}\0${screen.uiHash}\0${screen.visibleStateHash}\0${screen.operationPath.join("\0")}`;
   }
 
   isDuplicate(screen: ScreenFingerprint): boolean {

@@ -33,11 +33,20 @@ test("different route is not a duplicate even with same fingerprints", () => {
   );
 });
 
-test("operation path is not part of the deduplication key", () => {
+test("different operation paths on same screen are not duplicates", () => {
   const dedup = new ScreenDeduplicator();
   dedup.register({ route: "/items", uiHash: "hash1", visibleStateHash: "vs1", operationPath: ["click #menu"] });
   assert.equal(
     dedup.isDuplicate({ route: "/items", uiHash: "hash1", visibleStateHash: "vs1", operationPath: ["click #nav"] }),
+    false,
+  );
+});
+
+test("same operation path on same screen is a duplicate", () => {
+  const dedup = new ScreenDeduplicator();
+  dedup.register({ route: "/items", uiHash: "hash1", visibleStateHash: "vs1", operationPath: ["click #menu"] });
+  assert.equal(
+    dedup.isDuplicate({ route: "/items", uiHash: "hash1", visibleStateHash: "vs1", operationPath: ["click #menu"] }),
     true,
   );
 });

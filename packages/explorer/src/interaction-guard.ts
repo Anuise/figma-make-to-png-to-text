@@ -33,7 +33,7 @@ export type InteractableElement = {
 };
 
 export function isProhibitedInteraction(element: InteractableElement): boolean {
-  if (element.tagName === "input" && element.type === "file") {
+  if (element.type === "file" || element.type === "submit") {
     return true;
   }
 

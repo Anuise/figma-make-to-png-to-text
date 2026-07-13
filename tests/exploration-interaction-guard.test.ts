@@ -39,6 +39,11 @@ test("blocks upload actions", () => {
   assert.equal(isProhibitedInteraction({ tagName: "button", text: "上傳" }), true);
 });
 
+test("blocks unknown form submissions by type", () => {
+  assert.equal(isProhibitedInteraction({ tagName: "button", text: "Submit", type: "submit" }), true);
+  assert.equal(isProhibitedInteraction({ tagName: "input", text: "", type: "submit" }), true);
+});
+
 test("allows safe navigation", () => {
   assert.equal(isProhibitedInteraction({ tagName: "a", text: "Dashboard" }), false);
   assert.equal(isProhibitedInteraction({ tagName: "button", text: "Submit" }), false);
