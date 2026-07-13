@@ -1,0 +1,16 @@
+{
+  "name": "@analysis-tool/explorer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./explorer": "./src/explorer.ts"
+  },
+  "dependencies": {
+    "@analysis-tool/database": "*",
+    "playwright": "1.52.0"
+  }
+}

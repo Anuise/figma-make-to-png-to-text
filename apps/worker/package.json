@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@analysis-tool/database": "*",
+    "@analysis-tool/explorer": "*",
     "@analysis-tool/source-projects": "*",
     "pg": "8.22.0"
   },

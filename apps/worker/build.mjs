@@ -9,7 +9,7 @@ await rm(outputDirectory, { recursive: true, force: true });
 await build({
   bundle: true,
   entryPoints: [fileURLToPath(new URL("./src/main.ts", import.meta.url))],
-  external: ["pg"],
+  external: ["pg", "playwright", "playwright-core"],
   format: "esm",
   outfile: fileURLToPath(new URL("./dist/src/main.mjs", import.meta.url)),
   platform: "node",

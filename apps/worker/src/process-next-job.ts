@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 import {
@@ -11,6 +12,7 @@ import {
   saveStartupContractSnapshot,
   type ClaimedAnalysisRunJob,
 } from "@analysis-tool/database";
+import { runExploration } from "@analysis-tool/explorer/explorer";
 import {
   detectStartupContract,
   prepareSourceRevision,
@@ -157,6 +159,17 @@ export async function processNextJob(options: {
       startScript: contract.startScript,
       detectionSource: contract.detectionSource,
     });
+
+    await runExploration({
+      analysisRunId: job.analysisRunId,
+      workingCopyPath: prepared.workingCopyPath,
+      startScript: contract.startScript,
+      packageManager: contract.packageManager,
+      screenshotsDir: join(options.dataRoot, job.analysisRunId, "screenshots"),
+      tracesDir: join(options.dataRoot, job.analysisRunId, "traces"),
+      pool: options.pool,
+    });
+
     await completeAnalysisRunJob(options.pool, job, prepared);
   } catch (completionError) {
     let committed: boolean;
