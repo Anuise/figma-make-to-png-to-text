@@ -25,3 +25,19 @@ test("lists only direct child source-project directories", async (context) => {
     ],
   });
 });
+
+test("reports an unavailable source-project root", async (context) => {
+  const parent = await mkdtemp(join(tmpdir(), "analysis-sources-missing-"));
+  context.after(() => rm(parent, { recursive: true, force: true }));
+
+  const server = await startWebServer({
+    SOURCE_PROJECTS_ROOT: join(parent, "does-not-exist"),
+  });
+  context.after(() => server.stop());
+
+  const response = await fetch(`${server.url}/api/source-projects`);
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "Source project root is unavailable",
+  });
+});

@@ -25,11 +25,35 @@ function stopProcessTree(child) {
   }
 
   if (process.platform === "win32") {
-    return new Promise((resolveStop) => {
+    return new Promise((resolveStop, rejectStop) => {
       execFile(
         "taskkill",
         ["/pid", String(child.pid), "/t", "/f"],
-        () => resolveStop(),
+        (error, _stdout, stderr) => {
+          if (
+            error &&
+            child.exitCode === null &&
+            child.signalCode === null
+          ) {
+            rejectStop(
+              new Error(`Failed to stop Next.js process tree: ${stderr}`),
+            );
+            return;
+          }
+
+          if (child.exitCode !== null || child.signalCode !== null) {
+            resolveStop();
+            return;
+          }
+
+          const timeout = setTimeout(() => {
+            rejectStop(new Error("Next.js process tree did not stop in time"));
+          }, 5_000);
+          child.once("exit", () => {
+            clearTimeout(timeout);
+            resolveStop();
+          });
+        },
       );
     });
   }
@@ -48,7 +72,7 @@ async function waitForHealth(url, child, getOutput) {
   const deadline = Date.now() + 30_000;
 
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
+    if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(`Next.js exited before becoming ready:\n${getOutput()}`);
     }
 
