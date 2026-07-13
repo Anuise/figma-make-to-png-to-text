@@ -54,15 +54,24 @@ async function removeTree(path: string): Promise<void> {
   await rm(path, { recursive: true, force: true });
 }
 
-async function removeTemporarySiblings(finalPath: string): Promise<void> {
+async function removeStaleTemporarySiblings(
+  finalPath: string,
+  currentAttempt: number,
+): Promise<void> {
   const parent = dirname(finalPath);
-  const prefix = `${basename(finalPath)}.attempt-`;
+  const escapedName = basename(finalPath).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const temporaryPattern = new RegExp(
+    `^${escapedName}\\.attempt-(\\d+)\\.tmp-`,
+  );
   if (!(await pathExists(parent))) {
     return;
   }
 
   const removals = (await readdir(parent))
-    .filter((entry) => entry.startsWith(prefix) && entry.includes(".tmp-"))
+    .filter((entry) => {
+      const match = temporaryPattern.exec(entry);
+      return match ? Number(match[1]) < currentAttempt : false;
+    })
     .map((entry) => removeTree(join(parent, entry)));
   const results = await Promise.allSettled(removals);
   const errors = results.flatMap((result) =>
@@ -122,21 +131,25 @@ async function cleanTemporaryPaths(
 
 export async function prepareSourceRevision(options: {
   analysisRunId: string;
-  claimToken: string;
+  claimAttempt: number;
   dataRoot: string;
   sourcePath: string;
 }): Promise<PreparedSourceRevision> {
+  if (!Number.isSafeInteger(options.claimAttempt) || options.claimAttempt < 1) {
+    throw new Error("Source revision claim attempt must be a positive integer");
+  }
+
   const snapshotsRoot = join(options.dataRoot, "source-revisions");
   const workingCopiesRoot = join(options.dataRoot, "working-copies");
   const snapshotPath = join(snapshotsRoot, options.analysisRunId);
   const workingCopyPath = join(workingCopiesRoot, options.analysisRunId);
-  const temporarySnapshot = `${snapshotPath}.attempt-${options.claimToken}.tmp-${randomUUID()}`;
-  const temporaryWorkingCopy = `${workingCopyPath}.attempt-${options.claimToken}.tmp-${randomUUID()}`;
+  const temporarySnapshot = `${snapshotPath}.attempt-${options.claimAttempt}.tmp-${randomUUID()}`;
+  const temporaryWorkingCopy = `${workingCopyPath}.attempt-${options.claimAttempt}.tmp-${randomUUID()}`;
 
   await mkdir(snapshotsRoot, { recursive: true });
   await mkdir(workingCopiesRoot, { recursive: true });
-  await removeTemporarySiblings(snapshotPath);
-  await removeTemporarySiblings(workingCopyPath);
+  await removeStaleTemporarySiblings(snapshotPath, options.claimAttempt);
+  await removeStaleTemporarySiblings(workingCopyPath, options.claimAttempt);
 
   try {
     const sourceFingerprint = await fingerprintDirectory(options.sourcePath);

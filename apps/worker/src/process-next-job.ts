@@ -57,7 +57,7 @@ export async function processNextJob(options: {
     );
     prepared = await prepareSourceRevision({
       analysisRunId: job.analysisRunId,
-      claimToken: String(job.attempt),
+      claimAttempt: job.attempt,
       dataRoot: options.dataRoot,
       sourcePath,
     });

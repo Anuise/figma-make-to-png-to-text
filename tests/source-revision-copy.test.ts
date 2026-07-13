@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  access,
   chmod,
   lstat,
   mkdir,
@@ -48,7 +49,7 @@ test("reuses a verified orphan snapshot without overwriting it", async (context)
 
   const first = await prepareSourceRevision({
     analysisRunId: "run-1",
-    claimToken: "1",
+    claimAttempt: 1,
     dataRoot,
     sourcePath: source,
   });
@@ -56,7 +57,7 @@ test("reuses a verified orphan snapshot without overwriting it", async (context)
 
   const retried = await prepareSourceRevision({
     analysisRunId: "run-1",
-    claimToken: "2",
+    claimAttempt: 2,
     dataRoot,
     sourcePath: source,
   });
@@ -70,7 +71,7 @@ test("reuses a verified orphan snapshot without overwriting it", async (context)
   await assert.rejects(
     prepareSourceRevision({
       analysisRunId: "run-1",
-      claimToken: "3",
+      claimAttempt: 3,
       dataRoot,
       sourcePath: source,
     }),
@@ -80,4 +81,36 @@ test("reuses a verified orphan snapshot without overwriting it", async (context)
     await readFile(join(first.snapshotPath, "source.txt"), "utf8"),
     "version one\n",
   );
+});
+
+test("an older attempt cannot delete a newer attempt temporary tree", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "analysis-copy-fencing-"));
+  const source = join(root, "source");
+  const dataRoot = join(root, "data");
+  const snapshotsRoot = join(dataRoot, "source-revisions");
+  const newerTemporary = join(snapshotsRoot, "run-2.attempt-2.tmp-active");
+  await mkdir(source);
+  await writeFile(join(source, "source.txt"), "stable source\n");
+  await mkdir(newerTemporary, { recursive: true });
+  await writeFile(join(newerTemporary, "marker.txt"), "active attempt\n");
+  context.after(async () => {
+    await makeTreeWritable(root);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await prepareSourceRevision({
+    analysisRunId: "run-2",
+    claimAttempt: 1,
+    dataRoot,
+    sourcePath: source,
+  });
+  await access(join(newerTemporary, "marker.txt"));
+
+  await prepareSourceRevision({
+    analysisRunId: "run-2",
+    claimAttempt: 3,
+    dataRoot,
+    sourcePath: source,
+  });
+  await assert.rejects(access(newerTemporary));
 });
