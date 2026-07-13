@@ -31,9 +31,13 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-async function waitForHttp(url: string, timeoutMs: number): Promise<boolean> {
+async function waitForHttp(
+  url: string,
+  timeoutMs: number,
+  abortSignal: AbortSignal,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  while (Date.now() < deadline && !abortSignal.aborted) {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
       if (response.ok || response.status < 500) return true;
@@ -59,13 +63,15 @@ export async function launchApp(options: AppLauncherOptions): Promise<RunningApp
   });
 
   const baseUrl = `http://localhost:${port}`;
+  const abortController = new AbortController();
 
-  const ready = await waitForHttp(baseUrl, APP_READY_TIMEOUT_MS);
+  // 子程序提前退出時立即中止 HTTP 輪詢，避免等滿 60 秒
+  child.once("exit", () => abortController.abort());
+
+  const ready = await waitForHttp(baseUrl, APP_READY_TIMEOUT_MS, abortController.signal);
   if (!ready) {
     child.kill();
-    throw new Error(
-      `App did not become ready within ${APP_READY_TIMEOUT_MS}ms at ${baseUrl}`,
-    );
+    throw new Error(`App did not become ready within ${APP_READY_TIMEOUT_MS}ms at ${baseUrl}`);
   }
 
   return {
