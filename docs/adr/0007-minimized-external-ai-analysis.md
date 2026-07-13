@@ -1,0 +1,3 @@
+# 允許最小化內容送往外部 AI 服務
+
+工作流草稿、工項拆分、API 推導與工時估算可使用外部 AI API，但每次只傳送當前任務必要的截圖、互動證據與相關程式碼片段，並在傳送前排除 `.env`、憑證、token 及常見敏感檔案。第一版使用 Antigravity SDK 的 `Agent` 模式，不假設能指定其底層 Gemini 模型；目前帳號的 Antigravity Agents 初始 profile 為 60 RPM／100K TPM／100 RPD。只有 SDK 明確支援 model selection 時，才啟用 `gemini-3.5-flash` 至 `gemini-3.1-flash-lite` 的模型優先順序。每個 profile 的 RPM／TPM／RPD、最大併發、重試及是否允許降級均可調整，不寫死在程式碼，啟動時應以 Google AI Studio active rate limits 為準，並採單併發與 429 指數退避。每個分析階段使用獨立 agent session，階段內依資料量分成分析批次；每批輸出通過本機 JSON Schema 驗證後保存 checkpoint，執行前預估配額消耗。API key 僅由本機環境提供，分析作業記錄 SDK、模型（若可得）與 prompt 版本。禁止資料外傳的來源專案不得執行 AI 階段，而應停在待人工處理狀態。Free Tier 資料可能用於改善 Google 產品，因此敏感資料排除不可省略。
