@@ -168,6 +168,109 @@ export async function completeAnalysisRunJob(
   }
 }
 
+export async function awaitConfigAnalysisRunJob(
+  pool: Pool,
+  job: Pick<ClaimedAnalysisRunJob, "id" | "analysisRunId" | "attempt">,
+  reason: string,
+): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const jobResult = await client.query(
+      `
+        UPDATE jobs
+        SET
+          status = 'failed',
+          locked_at = NULL,
+          error_message = $1,
+          updated_at = now()
+        WHERE id = $2
+          AND status = 'processing'
+          AND attempts = $3
+      `,
+      [reason, job.id, job.attempt],
+    );
+    if (jobResult.rowCount !== 1) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const runResult = await client.query(
+      `
+        UPDATE analysis_runs
+        SET
+          status = 'awaiting-config',
+          startup_contract_reason = $1,
+          error_message = NULL,
+          updated_at = now()
+        WHERE id = $2
+          AND status = 'preparing'
+      `,
+      [reason, job.analysisRunId],
+    );
+    if (runResult.rowCount !== 1) {
+      throw new Error("Analysis run changed before awaiting-config was recorded");
+    }
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function resetAnalysisRunJobToQueued(
+  pool: Pool,
+  analysisRunId: string,
+): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const runResult = await client.query(
+      `
+        UPDATE analysis_runs
+        SET
+          status = 'queued',
+          startup_contract_reason = NULL,
+          error_message = NULL,
+          updated_at = now()
+        WHERE id = $1
+          AND status = 'awaiting-config'
+      `,
+      [analysisRunId],
+    );
+    if (runResult.rowCount !== 1) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const jobResult = await client.query(
+      `
+        UPDATE jobs
+        SET
+          status = 'queued',
+          locked_at = NULL,
+          error_message = NULL,
+          updated_at = now()
+        WHERE analysis_run_id = $1
+          AND status = 'failed'
+      `,
+      [analysisRunId],
+    );
+    if (jobResult.rowCount !== 1) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function failAnalysisRunJob(
   pool: Pool,
   job: Pick<ClaimedAnalysisRunJob, "id" | "analysisRunId" | "attempt">,

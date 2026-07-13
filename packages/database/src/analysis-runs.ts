@@ -4,7 +4,7 @@ import type { Pool } from "pg";
 
 import { enqueueAnalysisRunJob } from "./jobs.js";
 
-export type AnalysisRunStatus = "queued" | "preparing" | "ready" | "failed";
+export type AnalysisRunStatus = "queued" | "preparing" | "ready" | "failed" | "awaiting-config";
 
 export type SourceRevision = {
   id: string;
@@ -19,6 +19,7 @@ export type AnalysisRun = {
   sourceRelativePath: string;
   status: AnalysisRunStatus;
   errorMessage: string | null;
+  startupContractReason: string | null;
   sourceRevision: SourceRevision | null;
   createdAt: string;
   updatedAt: string;
@@ -29,6 +30,7 @@ type AnalysisRunRow = {
   source_relative_path: string;
   status: AnalysisRunStatus;
   error_message: string | null;
+  startup_contract_reason: string | null;
   created_at: Date;
   updated_at: Date;
   revision_id: string | null;
@@ -44,6 +46,7 @@ const analysisRunSelect = `
     runs.source_relative_path,
     runs.status,
     runs.error_message,
+    runs.startup_contract_reason,
     runs.created_at,
     runs.updated_at,
     revisions.id AS revision_id,
@@ -77,6 +80,7 @@ function mapAnalysisRun(row: AnalysisRunRow): AnalysisRun {
     sourceRelativePath: row.source_relative_path,
     status: row.status,
     errorMessage: row.error_message,
+    startupContractReason: row.startup_contract_reason,
     sourceRevision,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),

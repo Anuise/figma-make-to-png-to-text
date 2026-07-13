@@ -25,8 +25,9 @@ type SourceRevision = {
 type AnalysisRun = {
   id: string;
   sourceRelativePath: string;
-  status: "queued" | "preparing" | "ready" | "failed";
+  status: "queued" | "preparing" | "ready" | "failed" | "awaiting-config";
   errorMessage: string | null;
+  startupContractReason: string | null;
   sourceRevision: SourceRevision | null;
   createdAt: string;
   updatedAt: string;
@@ -37,6 +38,7 @@ const statusLabels: Record<AnalysisRun["status"], string> = {
   preparing: "Preparing",
   ready: "Ready",
   failed: "Failed",
+  "awaiting-config": "Needs config",
 };
 
 async function responseError(
@@ -74,6 +76,11 @@ export function AnalysisWorkbench() {
   const [loadingSources, setLoadingSources] = useState(true);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [overridingRunId, setOverridingRunId] = useState<string | null>(null);
+  const [overridePm, setOverridePm] = useState("");
+  const [overrideScript, setOverrideScript] = useState("");
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
   const latestRunsRequest = useRef(0);
 
   const loadProjects = useCallback(async () => {
@@ -145,6 +152,41 @@ export function AnalysisWorkbench() {
     const interval = window.setInterval(() => void loadRuns(), 2_000);
     return () => window.clearInterval(interval);
   }, [hasActiveRun, loadRuns]);
+
+  async function submitOverride(runId: string) {
+    if (overrideSubmitting) return;
+    setOverrideSubmitting(true);
+    setOverrideError(null);
+    try {
+      const response = await fetch(
+        `/api/analysis-runs/${runId}/exploration-configuration`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            startupPackageManager: overridePm || null,
+            startupScript: overrideScript || null,
+            envVarRefs: [],
+          }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(
+          await responseError(response, "Configuration could not be saved"),
+        );
+      }
+      setOverridingRunId(null);
+      setOverridePm("");
+      setOverrideScript("");
+      await loadRuns();
+    } catch (error) {
+      setOverrideError(
+        error instanceof Error ? error.message : "Configuration could not be saved",
+      );
+    } finally {
+      setOverrideSubmitting(false);
+    }
+  }
 
   async function createRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -313,6 +355,61 @@ export function AnalysisWorkbench() {
                               <dd><code>{run.sourceRevision.workingCopyPath}</code></dd>
                             </div>
                           </dl>
+                        ) : run.status === "awaiting-config" ? (
+                          <div className="awaiting-config">
+                            <p className="run-pending">
+                              {run.startupContractReason || "Startup contract could not be determined"}
+                            </p>
+                            {overridingRunId === run.id ? (
+                              <div className="override-form">
+                                <label htmlFor={`pm-${run.id}`}>Package manager</label>
+                                <select
+                                  id={`pm-${run.id}`}
+                                  value={overridePm}
+                                  onChange={(e) => setOverridePm(e.target.value)}
+                                  disabled={overrideSubmitting}
+                                >
+                                  <option value="">Auto-detect</option>
+                                  <option value="npm">npm</option>
+                                  <option value="yarn">yarn</option>
+                                  <option value="pnpm">pnpm</option>
+                                  <option value="bun">bun</option>
+                                </select>
+                                <label htmlFor={`script-${run.id}`}>Start script</label>
+                                <input
+                                  id={`script-${run.id}`}
+                                  type="text"
+                                  placeholder="e.g. dev, start"
+                                  value={overrideScript}
+                                  onChange={(e) => setOverrideScript(e.target.value)}
+                                  disabled={overrideSubmitting}
+                                />
+                                {overrideError ? (
+                                  <p className="inline-error" role="alert">{overrideError}</p>
+                                ) : null}
+                                <div className="override-actions">
+                                  <button
+                                    onClick={() => void submitOverride(run.id)}
+                                    disabled={overrideSubmitting}
+                                  >
+                                    {overrideSubmitting ? "Saving" : "Save and retry"}
+                                  </button>
+                                  <button
+                                    onClick={() => { setOverridingRunId(null); setOverrideError(null); }}
+                                    disabled={overrideSubmitting}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setOverridingRunId(run.id); setOverridePm(""); setOverrideScript(""); setOverrideError(null); }}
+                              >
+                                Override startup contract
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <p className="run-pending">
                             {run.status === "failed"

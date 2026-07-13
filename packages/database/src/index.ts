@@ -9,9 +9,19 @@ export {
   type SourceRevision,
 } from "./analysis-runs.js";
 export {
+  awaitConfigAnalysisRunJob,
   claimNextAnalysisRunJob,
   completeAnalysisRunJob,
   failAnalysisRunJob,
+  resetAnalysisRunJobToQueued,
   type ClaimedAnalysisRunJob,
   type CompletedSourceRevision,
 } from "./jobs.js";
+export {
+  getExplorationConfiguration,
+  getStartupContractSnapshot,
+  saveStartupContractSnapshot,
+  upsertExplorationConfiguration,
+  type ExplorationConfiguration,
+  type StartupContractSnapshot,
+} from "./exploration-configurations.js";
