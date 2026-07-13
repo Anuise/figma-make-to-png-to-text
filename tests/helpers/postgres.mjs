@@ -42,11 +42,15 @@ export async function startPostgres() {
   const project = `analysis-tool-test-${process.pid}-${Date.now()}`;
   const databaseUrl = `postgresql://analysis_tool:analysis_tool@127.0.0.1:${port}/analysis_tool`;
 
-  await runCompose(project, ["up", "--detach", "postgres"]);
   try {
+    await runCompose(project, ["up", "--detach", "postgres"]);
     await waitForPostgres(databaseUrl);
   } catch (error) {
-    await runCompose(project, ["down", "--volumes", "--remove-orphans"]);
+    await runCompose(project, [
+      "down",
+      "--volumes",
+      "--remove-orphans",
+    ]).catch(() => undefined);
     throw error;
   }
 

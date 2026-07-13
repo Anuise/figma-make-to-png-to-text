@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { migrate } from "@analysis-tool/database";
+import {
+  createAnalysisRun,
+  listAnalysisRuns,
+  migrate,
+} from "@analysis-tool/database";
 import pg from "pg";
 
 import { startPostgres } from "./helpers/postgres.mjs";
@@ -15,17 +19,36 @@ test("persists a queued analysis run through the HTTP API", async (context) => {
   let pool;
   let root;
   let server;
+  let postgresStopped = false;
   context.after(async () => {
-    await server?.stop();
-    await pool?.end();
-    if (root) {
-      await rm(root, { recursive: true, force: true });
+    const errors = [];
+    for (const cleanup of [
+      () => server?.stop(),
+      () => pool?.end(),
+      () => (root ? rm(root, { recursive: true, force: true }) : undefined),
+      () => (postgresStopped ? undefined : postgres.stop()),
+    ]) {
+      try {
+        await cleanup();
+      } catch (error) {
+        errors.push(error);
+      }
     }
-    await postgres.stop();
+    if (errors.length > 0) {
+      throw new AggregateError(errors, "Analysis Run test cleanup failed");
+    }
   });
 
   pool = new pg.Pool({ connectionString: postgres.databaseUrl });
   await migrate(pool);
+  await migrate(pool);
+
+  await pool.query(
+    "ALTER TABLE jobs ADD CONSTRAINT reject_test_jobs CHECK (false)",
+  );
+  await assert.rejects(createAnalysisRun(pool, "project-alpha"));
+  assert.deepEqual(await listAnalysisRuns(pool), []);
+  await pool.query("ALTER TABLE jobs DROP CONSTRAINT reject_test_jobs");
 
   root = await mkdtemp(join(tmpdir(), "analysis-sources-"));
   await mkdir(join(root, "project-alpha"));
@@ -66,10 +89,43 @@ test("persists a queued analysis run through the HTTP API", async (context) => {
     error: "Analysis run not found",
   });
 
+  const malformedIdResponse = await fetch(
+    `${server.url}/api/analysis-runs/not-a-uuid`,
+  );
+  assert.equal(malformedIdResponse.status, 404);
+
   const invalidResponse = await fetch(`${server.url}/api/analysis-runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ sourceProject: "../outside" }),
   });
   assert.equal(invalidResponse.status, 400);
+
+  const invalidJsonResponse = await fetch(`${server.url}/api/analysis-runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "not-json",
+  });
+  assert.equal(invalidJsonResponse.status, 400);
+
+  await pool.end();
+  pool = undefined;
+  await postgres.stop();
+  postgresStopped = true;
+
+  for (const [url, init] of [
+    [`${server.url}/api/analysis-runs`, undefined],
+    [
+      `${server.url}/api/analysis-runs`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceProject: "project-alpha" }),
+      },
+    ],
+    [`${server.url}/api/analysis-runs/${created.id}`, undefined],
+  ]) {
+    const unavailableResponse = await fetch(url, init);
+    assert.equal(unavailableResponse.status, 503);
+  }
 });
