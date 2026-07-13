@@ -77,7 +77,7 @@ async function waitForHealth(url, child, getOutput) {
     }
 
     try {
-      const response = await fetch(`${url}/api/health`);
+      const response = await fetch(url);
       if (response.ok) {
         return;
       }
