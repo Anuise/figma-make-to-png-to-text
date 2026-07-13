@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node build.mjs",
     "worker": "tsx src/main.ts",
     "worker:once": "tsx src/main.ts --once",
     "typecheck": "tsc --noEmit -p tsconfig.json"
@@ -11,5 +12,8 @@
     "@analysis-tool/database": "*",
     "@analysis-tool/source-projects": "*",
     "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
   }
 }

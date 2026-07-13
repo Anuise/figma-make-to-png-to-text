@@ -14,4 +14,6 @@ COPY apps/worker apps/worker
 COPY packages/database packages/database
 COPY packages/source-projects packages/source-projects
 
-CMD ["npm", "run", "worker", "--workspace=@analysis-tool/worker"]
+RUN npm run build --workspace=@analysis-tool/worker
+
+CMD ["node", "apps/worker/dist/src/main.mjs"]

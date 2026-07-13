@@ -8,7 +8,7 @@
   "scripts": {
     "test": "node tests/run-tests.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace=@analysis-tool/web && npm run build --workspace=@analysis-tool/worker",
     "db:migrate": "npm run db:migrate --workspaces --if-present",
     "worker:once": "npm run worker:once --workspaces --if-present"
   },
