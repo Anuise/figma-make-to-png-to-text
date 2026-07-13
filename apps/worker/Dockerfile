@@ -1,10 +1,17 @@
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/source-projects/package.json packages/source-projects/package.json
 RUN npm ci
 
-COPY . .
+COPY tsconfig.base.json ./
+COPY apps/worker apps/worker
+COPY packages/database packages/database
+COPY packages/source-projects packages/source-projects
 
-CMD ["npm", "run", "worker:once"]
+CMD ["npm", "run", "worker", "--workspace=@analysis-tool/worker"]
