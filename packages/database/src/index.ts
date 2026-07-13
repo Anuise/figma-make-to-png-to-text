@@ -8,3 +8,10 @@ export {
   type AnalysisRunStatus,
   type SourceRevision,
 } from "./analysis-runs.js";
+export {
+  claimNextAnalysisRunJob,
+  completeAnalysisRunJob,
+  failAnalysisRunJob,
+  type ClaimedAnalysisRunJob,
+  type CompletedSourceRevision,
+} from "./jobs.js";

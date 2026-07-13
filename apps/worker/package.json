@@ -1,0 +1,15 @@
+{
+  "name": "@analysis-tool/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "worker": "tsx src/main.ts",
+    "worker:once": "tsx src/main.ts --once",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@analysis-tool/database": "*",
+    "@analysis-tool/source-projects": "*",
+    "pg": "8.22.0"
+  }
+}
