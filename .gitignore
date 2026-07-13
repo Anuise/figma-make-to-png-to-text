@@ -3,3 +3,4 @@ node_modules/
 dist/
 .superpowers/
 ai-platform-figma-scr/
+.env
