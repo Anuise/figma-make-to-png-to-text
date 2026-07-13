@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type SourceProject = {
   name: string;
@@ -62,10 +69,12 @@ export function AnalysisWorkbench() {
   const [selectedProject, setSelectedProject] = useState("");
   const [runs, setRuns] = useState<AnalysisRun[]>([]);
   const [sourceError, setSourceError] = useState<string | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [loadingSources, setLoadingSources] = useState(true);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const latestRunsRequest = useRef(0);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -91,6 +100,7 @@ export function AnalysisWorkbench() {
   }, []);
 
   const loadRuns = useCallback(async () => {
+    const request = ++latestRunsRequest.current;
     try {
       const response = await fetch("/api/analysis-runs", { cache: "no-store" });
       if (!response.ok) {
@@ -99,16 +109,22 @@ export function AnalysisWorkbench() {
         );
       }
       const body: { runs: AnalysisRun[] } = await response.json();
-      setRuns(body.runs);
-      setRunError(null);
+      if (request === latestRunsRequest.current) {
+        setRuns(body.runs);
+        setListError(null);
+      }
     } catch (error) {
-      setRunError(
-        error instanceof Error
-          ? error.message
-          : "Analysis runs could not be loaded",
-      );
+      if (request === latestRunsRequest.current) {
+        setListError(
+          error instanceof Error
+            ? error.message
+            : "Analysis runs could not be loaded",
+        );
+      }
     } finally {
-      setLoadingRuns(false);
+      if (request === latestRunsRequest.current) {
+        setLoadingRuns(false);
+      }
     }
   }, []);
 
@@ -137,7 +153,7 @@ export function AnalysisWorkbench() {
     }
 
     setSubmitting(true);
-    setRunError(null);
+    setCreateError(null);
     try {
       const response = await fetch("/api/analysis-runs", {
         method: "POST",
@@ -150,9 +166,10 @@ export function AnalysisWorkbench() {
         );
       }
       const run: AnalysisRun = await response.json();
+      latestRunsRequest.current += 1;
       setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
     } catch (error) {
-      setRunError(
+      setCreateError(
         error instanceof Error
           ? error.message
           : "Analysis run could not be created",
@@ -213,7 +230,9 @@ export function AnalysisWorkbench() {
               </select>
               <button
                 type="submit"
-                disabled={!selectedProject || loadingSources || submitting}
+                disabled={
+                  !selectedProject || loadingSources || loadingRuns || submitting
+                }
               >
                 {submitting ? "Creating analysis run" : "Create analysis run"}
               </button>
@@ -221,6 +240,10 @@ export function AnalysisWorkbench() {
 
             {sourceError ? (
               <p className="inline-error" role="alert">{sourceError}</p>
+            ) : null}
+
+            {createError ? (
+              <p className="inline-error" role="alert">{createError}</p>
             ) : null}
 
             <dl className="boundary-note">
@@ -246,8 +269,8 @@ export function AnalysisWorkbench() {
               </span>
             </div>
 
-            {runError ? (
-              <p className="inline-error ledger-error" role="alert">{runError}</p>
+            {listError ? (
+              <p className="inline-error ledger-error" role="alert">{listError}</p>
             ) : null}
 
             <div aria-live="polite" aria-busy={loadingRuns}>

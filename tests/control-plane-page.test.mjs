@@ -11,9 +11,9 @@ import { startPostgres } from "./helpers/postgres.mjs";
 import { startWebServer } from "./helpers/web-server.mjs";
 
 test("renders the source preparation control plane", async (context) => {
-  const postgres = await startPostgres();
-  const pool = new pg.Pool({ connectionString: postgres.databaseUrl });
-  const root = await mkdtemp(join(tmpdir(), "analysis-sources-"));
+  let postgres;
+  let pool;
+  let root;
   let server;
 
   context.after(async () => {
@@ -21,17 +21,22 @@ test("renders the source preparation control plane", async (context) => {
       await server?.stop();
     } finally {
       try {
-        await pool.end();
+        await pool?.end();
       } finally {
         try {
-          await rm(root, { recursive: true, force: true });
+          if (root) {
+            await rm(root, { recursive: true, force: true });
+          }
         } finally {
-          await postgres.stop();
+          await postgres?.stop();
         }
       }
     }
   });
 
+  postgres = await startPostgres();
+  pool = new pg.Pool({ connectionString: postgres.databaseUrl });
+  root = await mkdtemp(join(tmpdir(), "analysis-sources-"));
   await migrate(pool);
   await mkdir(join(root, "project-alpha"));
   server = await startWebServer({
