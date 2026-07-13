@@ -56,35 +56,73 @@ async function removeTree(path: string): Promise<void> {
 
 async function removeTemporarySiblings(finalPath: string): Promise<void> {
   const parent = dirname(finalPath);
-  const prefix = `${basename(finalPath)}.tmp-`;
+  const prefix = `${basename(finalPath)}.attempt-`;
   if (!(await pathExists(parent))) {
     return;
   }
 
-  for (const entry of await readdir(parent)) {
-    if (entry.startsWith(prefix)) {
-      await removeTree(join(parent, entry));
-    }
-  }
-}
-
-export async function cleanupPreparedRevision(
-  prepared: Pick<PreparedSourceRevision, "snapshotPath" | "workingCopyPath">,
-): Promise<void> {
-  const results = await Promise.allSettled([
-    removeTree(prepared.workingCopyPath),
-    removeTree(prepared.snapshotPath),
-  ]);
+  const removals = (await readdir(parent))
+    .filter((entry) => entry.startsWith(prefix) && entry.includes(".tmp-"))
+    .map((entry) => removeTree(join(parent, entry)));
+  const results = await Promise.allSettled(removals);
   const errors = results.flatMap((result) =>
     result.status === "rejected" ? [result.reason] : [],
   );
   if (errors.length > 0) {
-    throw new AggregateError(errors, "Failed to clean prepared source revision");
+    throw new AggregateError(errors, "Failed to clean abandoned temporary paths");
   }
+}
+
+async function verifyFingerprint(
+  path: string,
+  expected: string,
+  label: string,
+): Promise<void> {
+  const actual = await fingerprintDirectory(path);
+  if (actual !== expected) {
+    throw new Error(`${label} does not match the source fingerprint`);
+  }
+}
+
+async function publishOrReuse(
+  temporaryPath: string,
+  finalPath: string,
+  expectedFingerprint: string,
+  label: string,
+): Promise<void> {
+  try {
+    await rename(temporaryPath, finalPath);
+    return;
+  } catch (error) {
+    if (!(await pathExists(finalPath))) {
+      throw error;
+    }
+  }
+
+  await removeTree(temporaryPath);
+  await verifyFingerprint(finalPath, expectedFingerprint, label);
+}
+
+async function cleanTemporaryPaths(
+  paths: string[],
+  processingError: unknown,
+): Promise<never> {
+  const results = await Promise.allSettled(paths.map(removeTree));
+  const cleanupErrors = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(
+      [processingError, ...cleanupErrors],
+      "Source revision preparation and temporary cleanup failed",
+    );
+  }
+  throw processingError;
 }
 
 export async function prepareSourceRevision(options: {
   analysisRunId: string;
+  claimToken: string;
   dataRoot: string;
   sourcePath: string;
 }): Promise<PreparedSourceRevision> {
@@ -92,8 +130,8 @@ export async function prepareSourceRevision(options: {
   const workingCopiesRoot = join(options.dataRoot, "working-copies");
   const snapshotPath = join(snapshotsRoot, options.analysisRunId);
   const workingCopyPath = join(workingCopiesRoot, options.analysisRunId);
-  const temporarySnapshot = `${snapshotPath}.tmp-${randomUUID()}`;
-  const temporaryWorkingCopy = `${workingCopyPath}.tmp-${randomUUID()}`;
+  const temporarySnapshot = `${snapshotPath}.attempt-${options.claimToken}.tmp-${randomUUID()}`;
+  const temporaryWorkingCopy = `${workingCopyPath}.attempt-${options.claimToken}.tmp-${randomUUID()}`;
 
   await mkdir(snapshotsRoot, { recursive: true });
   await mkdir(workingCopiesRoot, { recursive: true });
@@ -104,36 +142,58 @@ export async function prepareSourceRevision(options: {
     const sourceFingerprint = await fingerprintDirectory(options.sourcePath);
 
     if (await pathExists(snapshotPath)) {
-      const existingFingerprint = await fingerprintDirectory(snapshotPath);
-      if (existingFingerprint !== sourceFingerprint) {
-        await cleanupPreparedRevision({ snapshotPath, workingCopyPath });
-      }
-    }
-
-    if (!(await pathExists(snapshotPath))) {
+      await verifyFingerprint(
+        snapshotPath,
+        sourceFingerprint,
+        "Existing source revision",
+      );
+    } else {
       await cp(options.sourcePath, temporarySnapshot, {
         recursive: true,
         dereference: false,
         errorOnExist: true,
         force: false,
       });
-      const copiedFingerprint = await fingerprintDirectory(temporarySnapshot);
-      if (copiedFingerprint !== sourceFingerprint) {
-        throw new Error("Source project changed while its revision was copied");
-      }
+      await verifyFingerprint(
+        temporarySnapshot,
+        sourceFingerprint,
+        "Copied source revision",
+      );
       await setTreeMode(temporarySnapshot, 0o555, 0o444);
-      await rename(temporarySnapshot, snapshotPath);
+      await publishOrReuse(
+        temporarySnapshot,
+        snapshotPath,
+        sourceFingerprint,
+        "Published source revision",
+      );
     }
 
-    await removeTree(workingCopyPath);
-    await cp(snapshotPath, temporaryWorkingCopy, {
-      recursive: true,
-      dereference: false,
-      errorOnExist: true,
-      force: false,
-    });
-    await setTreeMode(temporaryWorkingCopy, 0o755, 0o644);
-    await rename(temporaryWorkingCopy, workingCopyPath);
+    if (await pathExists(workingCopyPath)) {
+      await verifyFingerprint(
+        workingCopyPath,
+        sourceFingerprint,
+        "Existing working copy",
+      );
+    } else {
+      await cp(snapshotPath, temporaryWorkingCopy, {
+        recursive: true,
+        dereference: false,
+        errorOnExist: true,
+        force: false,
+      });
+      await setTreeMode(temporaryWorkingCopy, 0o755, 0o644);
+      await verifyFingerprint(
+        temporaryWorkingCopy,
+        sourceFingerprint,
+        "Copied working copy",
+      );
+      await publishOrReuse(
+        temporaryWorkingCopy,
+        workingCopyPath,
+        sourceFingerprint,
+        "Published working copy",
+      );
+    }
 
     return {
       fingerprint: sourceFingerprint,
@@ -141,9 +201,9 @@ export async function prepareSourceRevision(options: {
       workingCopyPath,
     };
   } catch (error) {
-    await removeTree(temporarySnapshot);
-    await removeTree(temporaryWorkingCopy);
-    await cleanupPreparedRevision({ snapshotPath, workingCopyPath });
-    throw error;
+    return cleanTemporaryPaths(
+      [temporarySnapshot, temporaryWorkingCopy],
+      error,
+    );
   }
 }

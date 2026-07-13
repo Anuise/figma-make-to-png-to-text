@@ -2,16 +2,24 @@ import { createHash } from "node:crypto";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+type FingerprintRecord =
+  | { path: string; type: "directory" }
+  | { content: Buffer; path: string; type: "file" };
+
+function comparePaths(left: FingerprintRecord, right: FingerprintRecord): number {
+  return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
+}
+
 export async function fingerprintDirectory(root: string): Promise<string> {
-  const hash = createHash("sha256");
+  const rootStats = await lstat(root);
+  if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
+    throw new Error("Source project root must be a directory, not a symbolic link");
+  }
 
-  async function visit(directory: string, relativeDirectory: string) {
-    const entries = await readdir(directory, { withFileTypes: true });
-    entries.sort((left, right) =>
-      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
-    );
+  const records: FingerprintRecord[] = [];
 
-    for (const entry of entries) {
+  async function collect(directory: string, relativeDirectory: string) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
       const relativePath = relativeDirectory
         ? `${relativeDirectory}/${entry.name}`
         : entry.name;
@@ -23,15 +31,17 @@ export async function fingerprintDirectory(root: string): Promise<string> {
       }
 
       if (stats.isDirectory()) {
-        hash.update(`directory\0${relativePath}\0`);
-        await visit(absolutePath, relativePath);
+        records.push({ path: relativePath, type: "directory" });
+        await collect(absolutePath, relativePath);
         continue;
       }
 
       if (stats.isFile()) {
-        hash.update(`file\0${relativePath}\0`);
-        hash.update(await readFile(absolutePath));
-        hash.update("\0");
+        records.push({
+          content: await readFile(absolutePath),
+          path: relativePath,
+          type: "file",
+        });
         continue;
       }
 
@@ -39,6 +49,16 @@ export async function fingerprintDirectory(root: string): Promise<string> {
     }
   }
 
-  await visit(root, "");
+  await collect(root, "");
+  records.sort(comparePaths);
+
+  const hash = createHash("sha256");
+  for (const record of records) {
+    hash.update(`${record.type}\0${record.path}\0`);
+    if (record.type === "file") {
+      hash.update(record.content);
+      hash.update("\0");
+    }
+  }
   return hash.digest("hex");
 }

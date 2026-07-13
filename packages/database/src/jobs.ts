@@ -5,6 +5,7 @@ import type { Pool, PoolClient } from "pg";
 export type ClaimedAnalysisRunJob = {
   id: string;
   analysisRunId: string;
+  attempt: number;
   sourceRelativePath: string;
 };
 
@@ -36,6 +37,7 @@ export async function claimNextAnalysisRunJob(
     const result = await client.query<{
       id: string;
       analysis_run_id: string;
+      attempts: number;
       source_relative_path: string;
     }>(`
       WITH candidate AS (
@@ -61,7 +63,11 @@ export async function claimNextAnalysisRunJob(
       FROM candidate, analysis_runs AS run
       WHERE job.id = candidate.id
         AND run.id = job.analysis_run_id
-      RETURNING job.id, job.analysis_run_id, run.source_relative_path
+      RETURNING
+        job.id,
+        job.analysis_run_id,
+        job.attempts,
+        run.source_relative_path
     `);
 
     const row = result.rows[0];
@@ -82,6 +88,7 @@ export async function claimNextAnalysisRunJob(
     return {
       id: row.id,
       analysisRunId: row.analysis_run_id,
+      attempt: row.attempts,
       sourceRelativePath: row.source_relative_path,
     };
   } catch (error) {
@@ -94,13 +101,30 @@ export async function claimNextAnalysisRunJob(
 
 export async function completeAnalysisRunJob(
   pool: Pool,
-  job: Pick<ClaimedAnalysisRunJob, "id" | "analysisRunId">,
+  job: Pick<ClaimedAnalysisRunJob, "id" | "analysisRunId" | "attempt">,
   revision: CompletedSourceRevision,
 ): Promise<void> {
   const client = await pool.connect();
   const revisionId = randomUUID();
   try {
     await client.query("BEGIN");
+    const jobResult = await client.query(
+      `
+        UPDATE jobs
+        SET
+          status = 'completed',
+          locked_at = NULL,
+          error_message = NULL,
+          updated_at = now()
+        WHERE id = $1
+          AND status = 'processing'
+          AND attempts = $2
+      `,
+      [job.id, job.attempt],
+    );
+    if (jobResult.rowCount !== 1) {
+      throw new Error("Analysis job claim is no longer current");
+    }
     await client.query(
       `
         INSERT INTO source_revisions (
@@ -132,19 +156,7 @@ export async function completeAnalysisRunJob(
       `,
       [revisionId, job.analysisRunId],
     );
-    const jobResult = await client.query(
-      `
-        UPDATE jobs
-        SET
-          status = 'completed',
-          locked_at = NULL,
-          error_message = NULL,
-          updated_at = now()
-        WHERE id = $1 AND status = 'processing'
-      `,
-      [job.id],
-    );
-    if (runResult.rowCount !== 1 || jobResult.rowCount !== 1) {
+    if (runResult.rowCount !== 1) {
       throw new Error("Claimed analysis job changed before completion");
     }
     await client.query("COMMIT");
@@ -158,21 +170,13 @@ export async function completeAnalysisRunJob(
 
 export async function failAnalysisRunJob(
   pool: Pool,
-  job: Pick<ClaimedAnalysisRunJob, "id" | "analysisRunId">,
+  job: Pick<ClaimedAnalysisRunJob, "id" | "analysisRunId" | "attempt">,
   message: string,
-): Promise<void> {
+): Promise<boolean> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(
-      `
-        UPDATE analysis_runs
-        SET status = 'failed', error_message = $1, updated_at = now()
-        WHERE id = $2
-      `,
-      [message, job.analysisRunId],
-    );
-    await client.query(
+    const jobResult = await client.query(
       `
         UPDATE jobs
         SET
@@ -181,10 +185,30 @@ export async function failAnalysisRunJob(
           error_message = $1,
           updated_at = now()
         WHERE id = $2
+          AND status = 'processing'
+          AND attempts = $3
       `,
-      [message, job.id],
+      [message, job.id, job.attempt],
     );
+    if (jobResult.rowCount !== 1) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const runResult = await client.query(
+      `
+        UPDATE analysis_runs
+        SET status = 'failed', error_message = $1, updated_at = now()
+        WHERE id = $2
+          AND status = 'preparing'
+          AND source_revision_id IS NULL
+      `,
+      [message, job.analysisRunId],
+    );
+    if (runResult.rowCount !== 1) {
+      throw new Error("Analysis run changed before failure was recorded");
+    }
     await client.query("COMMIT");
+    return true;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

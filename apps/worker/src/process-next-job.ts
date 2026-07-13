@@ -2,10 +2,10 @@ import {
   claimNextAnalysisRunJob,
   completeAnalysisRunJob,
   failAnalysisRunJob,
+  getAnalysisRun,
   type ClaimedAnalysisRunJob,
 } from "@analysis-tool/database";
 import {
-  cleanupPreparedRevision,
   prepareSourceRevision,
   resolveSourceProject,
   type PreparedSourceRevision,
@@ -17,24 +17,26 @@ function errorMessage(error: unknown): string {
   return message.slice(0, 1_000);
 }
 
-async function markFailed(
+async function markFailedIfOwned(
   pool: Pool,
   job: ClaimedAnalysisRunJob,
-  prepared: PreparedSourceRevision | undefined,
   error: unknown,
 ): Promise<void> {
-  let failure = error;
-  if (prepared) {
-    try {
-      await cleanupPreparedRevision(prepared);
-    } catch (cleanupError) {
-      failure = new AggregateError(
-        [error, cleanupError],
-        "Worker processing and cleanup both failed",
-      );
-    }
-  }
-  await failAnalysisRunJob(pool, job, errorMessage(failure));
+  await failAnalysisRunJob(pool, job, errorMessage(error));
+}
+
+async function completionWasCommitted(
+  pool: Pool,
+  job: ClaimedAnalysisRunJob,
+  prepared: PreparedSourceRevision,
+): Promise<boolean> {
+  const run = await getAnalysisRun(pool, job.analysisRunId);
+  return (
+    run?.status === "ready" &&
+    run.sourceRevision?.fingerprint === prepared.fingerprint &&
+    run.sourceRevision.snapshotPath === prepared.snapshotPath &&
+    run.sourceRevision.workingCopyPath === prepared.workingCopyPath
+  );
 }
 
 export async function processNextJob(options: {
@@ -47,7 +49,7 @@ export async function processNextJob(options: {
     return false;
   }
 
-  let prepared: PreparedSourceRevision | undefined;
+  let prepared: PreparedSourceRevision;
   try {
     const sourcePath = await resolveSourceProject(
       options.sourceProjectsRoot,
@@ -55,12 +57,31 @@ export async function processNextJob(options: {
     );
     prepared = await prepareSourceRevision({
       analysisRunId: job.analysisRunId,
+      claimToken: String(job.attempt),
       dataRoot: options.dataRoot,
       sourcePath,
     });
-    await completeAnalysisRunJob(options.pool, job, prepared);
   } catch (error) {
-    await markFailed(options.pool, job, prepared, error);
+    await markFailedIfOwned(options.pool, job, error);
+    return true;
+  }
+
+  try {
+    await completeAnalysisRunJob(options.pool, job, prepared);
+  } catch (completionError) {
+    let committed: boolean;
+    try {
+      committed = await completionWasCommitted(options.pool, job, prepared);
+    } catch (verificationError) {
+      throw new AggregateError(
+        [completionError, verificationError],
+        "Could not determine whether source revision completion committed",
+      );
+    }
+
+    if (!committed) {
+      await markFailedIfOwned(options.pool, job, completionError);
+    }
   }
 
   return true;
