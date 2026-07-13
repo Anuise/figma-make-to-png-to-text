@@ -1,0 +1,21 @@
+{
+  "name": "figma-make-to-png-to-text",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run build --workspaces --if-present",
+    "db:migrate": "npm run db:migrate --workspaces --if-present",
+    "worker:once": "npm run worker:once --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}
