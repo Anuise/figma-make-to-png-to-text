@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { once } from "node:events";
 import { createServer } from "node:net";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -10,10 +9,26 @@ import { fileURLToPath } from "node:url";
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+async function fetchWithTimeout(url, init) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function getUnusedPort() {
   const server = createServer();
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
+  await new Promise((resolveListen, rejectListen) => {
+    const reject = (error) => rejectListen(error);
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolveListen();
+    });
+  });
   const address = server.address();
   assert.notEqual(typeof address, "string");
   const port = address.port;
@@ -74,7 +89,7 @@ async function waitForStack(project, environment, url) {
   while (Date.now() < deadline) {
     try {
       const [response, ...states] = await Promise.all([
-        fetch(`${url}/api/health`),
+        fetchWithTimeout(`${url}/api/health`),
         ...["postgres", "web", "worker"].map((service) =>
           getContainerState(project, environment, service),
         ),
@@ -104,7 +119,7 @@ async function waitForReadyRun(url, runId) {
   let lastRun;
 
   while (Date.now() < deadline) {
-    const response = await fetch(`${url}/api/analysis-runs/${runId}`);
+    const response = await fetchWithTimeout(`${url}/api/analysis-runs/${runId}`);
     assert.equal(response.status, 200);
     lastRun = await response.json();
     if (lastRun.status === "ready") {
@@ -138,7 +153,7 @@ test("preserves analysis runs and source revisions across Compose restart", asyn
     await runCompose(project, environment, ["up", "--build", "--detach"]);
     await waitForStack(project, environment, url);
 
-    const createResponse = await fetch(`${url}/api/analysis-runs`, {
+    const createResponse = await fetchWithTimeout(`${url}/api/analysis-runs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sourceProject: "project-alpha" }),
@@ -158,7 +173,9 @@ test("preserves analysis runs and source revisions across Compose restart", asyn
     await runCompose(project, environment, ["up", "--detach"]);
     await waitForStack(project, environment, url);
 
-    const response = await fetch(`${url}/api/analysis-runs/${persisted.id}`);
+    const response = await fetchWithTimeout(
+      `${url}/api/analysis-runs/${persisted.id}`,
+    );
     assert.equal(response.status, 200);
     const restoredRun = await response.json();
     assert.deepEqual(
