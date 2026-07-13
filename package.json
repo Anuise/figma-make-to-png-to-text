@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "test": "node --test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.base.json",
     "build": "npm run build --workspaces --if-present",
     "db:migrate": "npm run db:migrate --workspaces --if-present",
     "worker:once": "npm run worker:once --workspaces --if-present"
