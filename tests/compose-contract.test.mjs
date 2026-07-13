@@ -29,9 +29,11 @@ test("Compose declares the persistent local analysis services", () => {
     (volume) => volume.target === "/var/lib/postgresql/data",
   );
   assert.equal(postgresDataMount.type, "volume");
+  assert.match(postgresDataMount.source, /postgres-data$/);
 
   const analysisDataMount = config.services.worker.volumes.find(
     (volume) => volume.target === "/data",
   );
   assert.equal(analysisDataMount.type, "volume");
+  assert.match(analysisDataMount.source, /analysis-data$/);
 });
