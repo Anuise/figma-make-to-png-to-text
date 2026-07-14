@@ -337,24 +337,34 @@ export function AnalysisWorkbench() {
                         </header>
 
                         {run.sourceRevision ? (
-                          <dl className="revision-specimen">
-                            <div className="fingerprint-row">
-                              <dt>Fingerprint</dt>
-                              <dd><code>{run.sourceRevision.fingerprint}</code></dd>
-                            </div>
-                            <div>
-                              <dt>Revision</dt>
-                              <dd><code>{run.sourceRevision.id}</code></dd>
-                            </div>
-                            <div>
-                              <dt>Snapshot</dt>
-                              <dd><code>{run.sourceRevision.snapshotPath}</code></dd>
-                            </div>
-                            <div>
-                              <dt>Working copy</dt>
-                              <dd><code>{run.sourceRevision.workingCopyPath}</code></dd>
-                            </div>
-                          </dl>
+                          <>
+                            <dl className="revision-specimen">
+                              <div className="fingerprint-row">
+                                <dt>Fingerprint</dt>
+                                <dd><code>{run.sourceRevision.fingerprint}</code></dd>
+                              </div>
+                              <div>
+                                <dt>Revision</dt>
+                                <dd><code>{run.sourceRevision.id}</code></dd>
+                              </div>
+                              <div>
+                                <dt>Snapshot</dt>
+                                <dd><code>{run.sourceRevision.snapshotPath}</code></dd>
+                              </div>
+                              <div>
+                                <dt>Working copy</dt>
+                                <dd><code>{run.sourceRevision.workingCopyPath}</code></dd>
+                              </div>
+                            </dl>
+                            {run.status === "ready" ? (
+                              <a
+                                href={`/analysis-runs/${run.id}/review`}
+                                className="review-screens-link"
+                              >
+                                Review candidate screens →
+                              </a>
+                            ) : null}
+                          </>
                         ) : run.status === "awaiting-config" ? (
                           <div className="awaiting-config">
                             <p className="run-pending">

@@ -27,10 +27,16 @@ export {
   type StartupContractSnapshot,
 } from "./exploration-configurations.js";
 export {
+  batchUpdateScreenReview,
+  getCandidateScreen,
   getExplorationCheckpoint,
   insertCandidateScreen,
+  listActiveConfirmedScreens,
   listCandidateScreens,
+  updateCandidateScreenReview,
   upsertExplorationCheckpoint,
   type CandidateScreen,
   type ExplorationCheckpoint,
+  type ReviewStatus,
+  type ReviewUpdate,
 } from "./candidate-screens.js";

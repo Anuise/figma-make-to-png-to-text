@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import type { Pool } from "pg";
 
+export type ReviewStatus = "pending" | "confirmed" | "excluded" | "merged";
+
 export type CandidateScreen = {
   id: string;
   analysisRunId: string;
@@ -12,6 +14,11 @@ export type CandidateScreen = {
   screenshotPath: string | null;
   tracePath: string | null;
   incompleteReason: string | null;
+  reviewStatus: ReviewStatus;
+  screenTitle: string | null;
+  screenNotes: string | null;
+  mergedIntoId: string | null;
+  reviewedAt: string | null;
   createdAt: string;
 };
 
@@ -25,6 +32,11 @@ type CandidateScreenRow = {
   screenshot_path: string | null;
   trace_path: string | null;
   incomplete_reason: string | null;
+  review_status: ReviewStatus;
+  screen_title: string | null;
+  screen_notes: string | null;
+  merged_into_id: string | null;
+  reviewed_at: Date | null;
   created_at: Date;
 };
 
@@ -39,6 +51,11 @@ function mapCandidateScreen(row: CandidateScreenRow): CandidateScreen {
     screenshotPath: row.screenshot_path,
     tracePath: row.trace_path,
     incompleteReason: row.incomplete_reason,
+    reviewStatus: row.review_status,
+    screenTitle: row.screen_title,
+    screenNotes: row.screen_notes,
+    mergedIntoId: row.merged_into_id,
+    reviewedAt: row.reviewed_at ? row.reviewed_at.toISOString() : null,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -87,6 +104,84 @@ export async function listCandidateScreens(
 ): Promise<CandidateScreen[]> {
   const result = await pool.query<CandidateScreenRow>(
     `SELECT * FROM candidate_screens WHERE analysis_run_id = $1 ORDER BY created_at`,
+    [analysisRunId],
+  );
+  return result.rows.map(mapCandidateScreen);
+}
+
+export async function getCandidateScreen(
+  pool: Pool,
+  id: string,
+): Promise<CandidateScreen | null> {
+  const result = await pool.query<CandidateScreenRow>(
+    `SELECT * FROM candidate_screens WHERE id = $1`,
+    [id],
+  );
+  return result.rows[0] ? mapCandidateScreen(result.rows[0]) : null;
+}
+
+export type ReviewUpdate = {
+  reviewStatus: ReviewStatus;
+  screenTitle?: string | null;
+  screenNotes?: string | null;
+  mergedIntoId?: string | null;
+};
+
+export async function updateCandidateScreenReview(
+  pool: Pool,
+  id: string,
+  update: ReviewUpdate,
+): Promise<CandidateScreen | null> {
+  const result = await pool.query<CandidateScreenRow>(
+    `
+      UPDATE candidate_screens
+      SET
+        review_status = $2,
+        screen_title  = COALESCE($3, screen_title),
+        screen_notes  = COALESCE($4, screen_notes),
+        merged_into_id = $5,
+        reviewed_at   = now()
+      WHERE id = $1
+      RETURNING *
+    `,
+    [
+      id,
+      update.reviewStatus,
+      update.screenTitle ?? null,
+      update.screenNotes ?? null,
+      update.mergedIntoId ?? null,
+    ],
+  );
+  return result.rows[0] ? mapCandidateScreen(result.rows[0]) : null;
+}
+
+export async function batchUpdateScreenReview(
+  pool: Pool,
+  analysisRunId: string,
+  ids: string[],
+  reviewStatus: ReviewStatus,
+): Promise<CandidateScreen[]> {
+  if (ids.length === 0) return [];
+  const result = await pool.query<CandidateScreenRow>(
+    `
+      UPDATE candidate_screens
+      SET review_status = $3, reviewed_at = now()
+      WHERE id = ANY($1::uuid[]) AND analysis_run_id = $2
+      RETURNING *
+    `,
+    [ids, analysisRunId, reviewStatus],
+  );
+  return result.rows.map(mapCandidateScreen);
+}
+
+export async function listActiveConfirmedScreens(
+  pool: Pool,
+  analysisRunId: string,
+): Promise<CandidateScreen[]> {
+  const result = await pool.query<CandidateScreenRow>(
+    `SELECT * FROM candidate_screens
+      WHERE analysis_run_id = $1 AND review_status = 'confirmed'
+      ORDER BY created_at`,
     [analysisRunId],
   );
   return result.rows.map(mapCandidateScreen);
