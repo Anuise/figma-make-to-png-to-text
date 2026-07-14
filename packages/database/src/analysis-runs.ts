@@ -109,6 +109,7 @@ export async function createAnalysisRun(
           source_relative_path,
           status,
           error_message,
+          startup_contract_reason,
           created_at,
           updated_at,
           NULL::uuid AS revision_id,
