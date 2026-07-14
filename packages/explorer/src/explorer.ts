@@ -8,9 +8,11 @@ import { chromium } from "playwright";
 import {
   insertCandidateScreen,
   upsertExplorationCheckpoint,
+  type AuthStep,
 } from "@analysis-tool/database";
 
 import { launchApp } from "./app-launcher.js";
+import { applyAuthSteps, resolveStorageStatePath } from "./auth-init.js";
 import { ExplorationBudget } from "./budget.js";
 import { isProhibitedInteraction } from "./interaction-guard.js";
 import { NetworkGuard } from "./network-guard.js";
@@ -29,6 +31,8 @@ export type ExplorerOptions = {
   maxInteractions?: number;
   maxCandidateScreens?: number;
   maxDurationMs?: number;
+  authSteps?: AuthStep[] | null;
+  storageStateEnvVar?: string | null;
   pool: Pool;
 };
 
@@ -60,6 +64,8 @@ export async function runExploration(options: ExplorerOptions): Promise<Explorat
     maxInteractions = 100,
     maxCandidateScreens = 50,
     maxDurationMs = 300_000,
+    authSteps = null,
+    storageStateEnvVar = null,
   } = options;
 
   await mkdir(screenshotsDir, { recursive: true });
@@ -92,9 +98,12 @@ export async function runExploration(options: ExplorerOptions): Promise<Explorat
 
   let candidateScreensFound = 0;
 
+  const storageStatePath = storageStateEnvVar ? resolveStorageStatePath(storageStateEnvVar) : null;
+
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
+    ...(storageStatePath ? { storageState: storageStatePath } : {}),
   });
 
   try {
@@ -108,13 +117,20 @@ export async function runExploration(options: ExplorerOptions): Promise<Explorat
       }
     });
 
+    if (authSteps && authSteps.length > 0) {
+      await applyAuthSteps(page, authSteps, networkGuard);
+    }
+
     const toVisit: string[] = [app.baseUrl];
     const visited = new Set<string>();
+    const unexploredRoutes = new Set<string>();
 
     while (toVisit.length > 0 && !budget.isExhausted()) {
       const url = toVisit.shift()!;
       if (visited.has(url)) continue;
       visited.add(url);
+
+      const intendedPathname = new URL(url).pathname;
 
       try {
         await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
@@ -123,6 +139,20 @@ export async function runExploration(options: ExplorerOptions): Promise<Explorat
       }
 
       const pathname = new URL(page.url()).pathname;
+
+      if (pathname !== intendedPathname && !unexploredRoutes.has(intendedPathname)) {
+        unexploredRoutes.add(intendedPathname);
+        await insertCandidateScreen(pool, {
+          analysisRunId,
+          route: intendedPathname,
+          uiFingerprint: "",
+          visibleStateHash: "",
+          operationPath: [],
+          screenshotPath: null,
+          tracePath: null,
+          incompleteReason: `unexplored: redirected to ${pathname}`,
+        });
+      }
       const uiHash = await computeUiHash(page);
       const visibleStateHash = await computeVisibleStateHash(page);
       const operationPath: string[] = [];

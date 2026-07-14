@@ -2,12 +2,20 @@ import { randomUUID } from "node:crypto";
 
 import type { Pool } from "pg";
 
+export type AuthStep =
+  | { type: "navigate"; url: string }
+  | { type: "fill"; selector: string; envVarRef: string }
+  | { type: "click"; selector: string }
+  | { type: "wait_for_selector"; selector: string };
+
 export type ExplorationConfiguration = {
   id: string;
   analysisRunId: string;
   startupPackageManager: string | null;
   startupScript: string | null;
   envVarRefs: string[];
+  authSteps: AuthStep[] | null;
+  storageStateEnvVar: string | null;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -19,6 +27,8 @@ type ExplorationConfigRow = {
   startup_package_manager: string | null;
   startup_script: string | null;
   env_var_refs: string[];
+  auth_steps: AuthStep[] | null;
+  storage_state_env_var: string | null;
   version: number;
   created_at: Date;
   updated_at: Date;
@@ -31,6 +41,8 @@ function mapConfig(row: ExplorationConfigRow): ExplorationConfiguration {
     startupPackageManager: row.startup_package_manager,
     startupScript: row.startup_script,
     envVarRefs: row.env_var_refs,
+    authSteps: row.auth_steps ?? null,
+    storageStateEnvVar: row.storage_state_env_var ?? null,
     version: row.version,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -55,25 +67,38 @@ export async function upsertExplorationConfiguration(
     startupPackageManager: string | null;
     startupScript: string | null;
     envVarRefs: string[];
+    authSteps?: AuthStep[] | null;
+    storageStateEnvVar?: string | null;
   },
 ): Promise<ExplorationConfiguration> {
   const id = randomUUID();
   const result = await pool.query<ExplorationConfigRow>(
     `
       INSERT INTO exploration_configurations (
-        id, analysis_run_id, startup_package_manager, startup_script, env_var_refs
+        id, analysis_run_id, startup_package_manager, startup_script, env_var_refs,
+        auth_steps, storage_state_env_var
       )
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (analysis_run_id) DO UPDATE
         SET
           startup_package_manager = EXCLUDED.startup_package_manager,
           startup_script = EXCLUDED.startup_script,
           env_var_refs = EXCLUDED.env_var_refs,
+          auth_steps = EXCLUDED.auth_steps,
+          storage_state_env_var = EXCLUDED.storage_state_env_var,
           version = exploration_configurations.version + 1,
           updated_at = now()
       RETURNING *
     `,
-    [id, analysisRunId, values.startupPackageManager, values.startupScript, values.envVarRefs],
+    [
+      id,
+      analysisRunId,
+      values.startupPackageManager,
+      values.startupScript,
+      values.envVarRefs,
+      values.authSteps ? JSON.stringify(values.authSteps) : null,
+      values.storageStateEnvVar ?? null,
+    ],
   );
   return mapConfig(result.rows[0]);
 }

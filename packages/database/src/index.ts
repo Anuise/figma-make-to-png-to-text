@@ -22,6 +22,7 @@ export {
   getStartupContractSnapshot,
   saveStartupContractSnapshot,
   upsertExplorationConfiguration,
+  type AuthStep,
   type ExplorationConfiguration,
   type StartupContractSnapshot,
 } from "./exploration-configurations.js";

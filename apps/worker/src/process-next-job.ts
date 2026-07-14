@@ -160,6 +160,8 @@ export async function processNextJob(options: {
       detectionSource: contract.detectionSource,
     });
 
+    const explorationConfig = await getExplorationConfiguration(options.pool, job.analysisRunId);
+
     await runExploration({
       analysisRunId: job.analysisRunId,
       workingCopyPath: prepared.workingCopyPath,
@@ -167,6 +169,8 @@ export async function processNextJob(options: {
       packageManager: contract.packageManager,
       screenshotsDir: join(options.dataRoot, job.analysisRunId, "screenshots"),
       tracesDir: join(options.dataRoot, job.analysisRunId, "traces"),
+      authSteps: explorationConfig?.authSteps ?? null,
+      storageStateEnvVar: explorationConfig?.storageStateEnvVar ?? null,
       pool: options.pool,
     });
 
