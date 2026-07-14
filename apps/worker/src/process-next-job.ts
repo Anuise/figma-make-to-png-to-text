@@ -59,7 +59,7 @@ function packageManagerBinary(pm: PackageManager): string {
   return pm;
 }
 
-async function runFrozenInstall(
+async function runInstall(
   workingCopyPath: string,
   contract: StartupContract,
 ): Promise<void> {
@@ -141,7 +141,7 @@ export async function processNextJob(options: {
   }
 
   try {
-    await runFrozenInstall(prepared.workingCopyPath, contract);
+    await runInstall(prepared.workingCopyPath, contract);
   } catch (error) {
     const reason = `Install failed (${contract.packageManager} ${contract.installArgs.join(" ")}): ${errorMessage(error)}`;
     const recorded = await awaitConfigAnalysisRunJob(options.pool, job, reason);

@@ -98,6 +98,7 @@ test("detects package manager from packageManager field when no lockfile", async
     const result = await detectStartupContract(path);
     assert.ok(result.ok);
     assert.equal(result.contract.packageManager, "pnpm");
+    assert.deepEqual(result.contract.installArgs, ["install"]);
   } finally {
     await cleanup();
   }
@@ -136,14 +137,16 @@ test("ambiguous when multiple lockfiles found", async () => {
   }
 });
 
-test("ambiguous when no lockfile and no packageManager field", async () => {
+test("defaults to npm with plain install when no lockfile and no packageManager field", async () => {
   const { path, cleanup } = await makeProject({
     "package.json": JSON.stringify({ name: "test", scripts: { dev: "vite" } }),
   });
   try {
     const result = await detectStartupContract(path);
-    assert.ok(!result.ok);
-    assert.match(result.reason, /No lockfile or packageManager field/);
+    assert.ok(result.ok);
+    assert.equal(result.contract.packageManager, "npm");
+    assert.deepEqual(result.contract.installArgs, ["install"]);
+    assert.equal(result.contract.detectionSource, "auto");
   } finally {
     await cleanup();
   }
@@ -210,6 +213,7 @@ test("override package manager skips lockfile detection", async () => {
     assert.ok(result.ok);
     assert.equal(result.contract.packageManager, "npm");
     assert.equal(result.contract.detectionSource, "override");
+    assert.deepEqual(result.contract.installArgs, ["install"]);
   } finally {
     await cleanup();
   }

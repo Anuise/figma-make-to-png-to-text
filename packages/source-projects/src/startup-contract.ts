@@ -26,11 +26,25 @@ const LOCKFILES: Record<string, PackageManager> = {
   "bun.lockb": "bun",
 };
 
-const INSTALL_ARGS: Record<PackageManager, string[]> = {
+const LOCKFILE_FOR_PACKAGE_MANAGER: Record<PackageManager, string> = {
+  npm: "package-lock.json",
+  yarn: "yarn.lock",
+  pnpm: "pnpm-lock.yaml",
+  bun: "bun.lockb",
+};
+
+const FROZEN_INSTALL_ARGS: Record<PackageManager, string[]> = {
   npm: ["ci"],
   yarn: ["install", "--frozen-lockfile"],
   pnpm: ["install", "--frozen-lockfile"],
   bun: ["install", "--frozen-lockfile"],
+};
+
+const PLAIN_INSTALL_ARGS: Record<PackageManager, string[]> = {
+  npm: ["install"],
+  yarn: ["install"],
+  pnpm: ["install"],
+  bun: ["install"],
 };
 
 async function fileExists(path: string): Promise<boolean> {
@@ -94,7 +108,7 @@ async function detectPackageManager(
 
   const pmField = pkg.data.packageManager;
   if (typeof pmField === "string") {
-    for (const pm of Object.keys(INSTALL_ARGS) as PackageManager[]) {
+    for (const pm of Object.keys(FROZEN_INSTALL_ARGS) as PackageManager[]) {
       if (pmField.startsWith(`${pm}@`) || pmField === pm) {
         return { ok: true, pm };
       }
@@ -105,7 +119,9 @@ async function detectPackageManager(
     };
   }
 
-  return { ok: false, reason: "No lockfile or packageManager field found" };
+  // Figma Make 匯出檔通常不含 lockfile；沒有 lockfile 也沒有 packageManager 欄位時
+  // 預設用 npm，安裝方式改成 plain install（見 detectStartupContract）。
+  return { ok: true, pm: "npm" };
 }
 
 async function detectStartScript(
@@ -152,11 +168,15 @@ export async function detectStartupContract(
 
   const isOverride = Boolean(override?.packageManager || override?.startScript);
 
+  const hasLockfile = await fileExists(
+    join(workingCopyPath, LOCKFILE_FOR_PACKAGE_MANAGER[pmResult.pm]),
+  );
+
   return {
     ok: true,
     contract: {
       packageManager: pmResult.pm,
-      installArgs: INSTALL_ARGS[pmResult.pm],
+      installArgs: hasLockfile ? FROZEN_INSTALL_ARGS[pmResult.pm] : PLAIN_INSTALL_ARGS[pmResult.pm],
       startScript: scriptResult.script,
       detectionSource: isOverride ? "override" : "auto",
     },

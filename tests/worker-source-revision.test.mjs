@@ -77,7 +77,7 @@ async function makeTestEnv(root) {
   return { sourceRoot, dataRoot, postgres, pool, server };
 }
 
-test("worker transitions to awaiting-config when no lockfile is found", async (context) => {
+test("worker transitions to awaiting-config when no dev or start script is found", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "analysis-worker-"));
   let env;
 
@@ -106,18 +106,18 @@ test("worker transitions to awaiting-config when no lockfile is found", async (c
   });
 
   env = await makeTestEnv(root);
-  const projectRoot = join(env.sourceRoot, "project-no-lockfile");
+  const projectRoot = join(env.sourceRoot, "project-no-start-script");
   await mkdir(join(projectRoot, "src"), { recursive: true });
   await writeFile(
     join(projectRoot, "package.json"),
-    JSON.stringify({ name: "fixture", scripts: { dev: "vite" } }) + "\n",
+    JSON.stringify({ name: "fixture", scripts: { build: "tsc" } }) + "\n",
   );
   await writeFile(join(projectRoot, "src/index.ts"), "export const value = 1;\n");
 
   const createdResponse = await fetch(`${env.server.url}/api/analysis-runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sourceProject: "project-no-lockfile" }),
+    body: JSON.stringify({ sourceProject: "project-no-start-script" }),
   });
   assert.equal(createdResponse.status, 201);
   const created = await createdResponse.json();
@@ -134,7 +134,7 @@ test("worker transitions to awaiting-config when no lockfile is found", async (c
   assert.equal(runResponse.status, 200);
   const run = await runResponse.json();
   assert.equal(run.status, "awaiting-config");
-  assert.match(run.startupContractReason, /No lockfile or packageManager field/);
+  assert.match(run.startupContractReason, /No "dev" or "start" script/);
 });
 
 test("worker creates immutable source revision and runs frozen install when lockfile found", async (context) => {
