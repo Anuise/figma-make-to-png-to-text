@@ -1,0 +1,7 @@
+{
+  "name": "@analysis-tool/ai-worker",
+  "private": true,
+  "scripts": {
+    "test": "uv run pytest"
+  }
+}

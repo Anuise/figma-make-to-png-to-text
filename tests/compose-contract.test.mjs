@@ -11,6 +11,7 @@ test("Compose declares the persistent local analysis services", () => {
   const config = JSON.parse(output);
 
   assert.deepEqual(Object.keys(config.services).sort(), [
+    "ai-worker",
     "postgres",
     "web",
     "worker",
@@ -25,6 +26,15 @@ test("Compose declares the persistent local analysis services", () => {
     assert.equal(sourceMount.read_only, true);
   }
 
+  // ai-worker never touches source projects directly, only the already-copied
+  // snapshot under /data -- it must not have a /sources mount at all.
+  assert.equal(
+    config.services["ai-worker"].volumes.some(
+      (volume) => volume.target === "/sources",
+    ),
+    false,
+  );
+
   const postgresDataMount = config.services.postgres.volumes.find(
     (volume) => volume.target === "/var/lib/postgresql/data",
   );
@@ -36,4 +46,11 @@ test("Compose declares the persistent local analysis services", () => {
   );
   assert.equal(analysisDataMount.type, "volume");
   assert.match(analysisDataMount.source, /analysis-data$/);
+
+  const aiWorkerDataMount = config.services["ai-worker"].volumes.find(
+    (volume) => volume.target === "/data",
+  );
+  assert.equal(aiWorkerDataMount.type, "volume");
+  assert.match(aiWorkerDataMount.source, /analysis-data$/);
+  assert.equal(aiWorkerDataMount.read_only, true);
 });

@@ -751,6 +751,33 @@ select:disabled {
   gap: 8px;
 }
 
+.generate-panel {
+  margin-bottom: 28px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--draft);
+}
+
+.ai-notice {
+  margin: 0 0 12px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.related-screens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.screen-screenshot-thumb {
+  display: block;
+  width: 96px;
+  height: auto;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
 @media (max-width: 800px) {
   .system-bar {
     padding: 10px 18px;

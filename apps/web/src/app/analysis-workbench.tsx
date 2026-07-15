@@ -357,12 +357,20 @@ export function AnalysisWorkbench() {
                               </div>
                             </dl>
                             {run.status === "ready" ? (
-                              <a
-                                href={`/analysis-runs/${run.id}/review`}
-                                className="review-screens-link"
-                              >
-                                Review candidate screens →
-                              </a>
+                              <>
+                                <a
+                                  href={`/analysis-runs/${run.id}/review`}
+                                  className="review-screens-link"
+                                >
+                                  Review candidate screens →
+                                </a>
+                                <a
+                                  href={`/analysis-runs/${run.id}/workflows`}
+                                  className="review-screens-link"
+                                >
+                                  Review workflow drafts →
+                                </a>
+                              </>
                             ) : null}
                           </>
                         ) : run.status === "awaiting-config" ? (

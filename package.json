@@ -10,7 +10,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build --workspace=@analysis-tool/web && npm run build --workspace=@analysis-tool/worker",
     "db:migrate": "npm run db:migrate --workspaces --if-present",
-    "worker:once": "npm run worker:once --workspaces --if-present"
+    "worker:once": "npm run worker:once --workspaces --if-present",
+    "test:ai-worker": "npm run test --workspace=@analysis-tool/ai-worker"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

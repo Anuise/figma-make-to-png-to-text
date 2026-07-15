@@ -67,6 +67,31 @@ services:
         target: /sources
         read_only: true
       - analysis-data:/data
+  ai-worker:
+    build:
+      context: .
+      dockerfile: apps/ai-worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://analysis_tool:analysis_tool@postgres:5432/analysis_tool
+      ANALYSIS_DATA_ROOT: /data
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - uv
+        - run
+        - --no-sync
+        - python
+        - -c
+        - "import os,psycopg; psycopg.connect(os.environ['DATABASE_URL']).execute('SELECT 1')"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - analysis-data:/data:ro
 volumes:
   postgres-data:
   analysis-data:
